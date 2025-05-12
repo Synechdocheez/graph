@@ -11,9 +11,9 @@
       color: #ddd;
     }
     h1 {
-      margin-bottom: 10px;
       font-size: 24px;
       color: #fff;
+      margin-bottom: 10px;
     }
     #controls {
       margin-bottom: 20px;
@@ -81,14 +81,14 @@
   <h1>Mileage Viewer (Dark Mode)</h1>
 
   <div id="controls">
-    <label for="span">Select time span (max 30 days):</label>
+    <label for="span">Select time span:</label>
     <select id="span">
       <option value="7">Last 7 days</option>
       <option value="14">Last 14 days</option>
       <option value="21">Last 21 days</option>
       <option value="30">Last 30 days</option>
-      <option value="60">Last 60 days (capped to 30)</option>
-      <option value="90">Last 90 days (capped to 30)</option>
+      <option value="90">Last 90 days (aggregated to 30)</option>
+      <option value="365">Last 365 days (aggregated to 30)</option>
     </select>
   </div>
 
@@ -99,33 +99,29 @@
 
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script>
-    // Dummy data generator (replace with your Garmin JSON fetch)
+    // --- Dummy data; replace with your Garmin fetch
     function generateDummyData() {
       const data = [];
       const today = new Date();
       for (let i = 0; i < 365; i++) {
         const d = new Date(today);
         d.setDate(d.getDate() - i);
-        data.push({
-          date: d,
-          miles: +(Math.random() * 10).toFixed(1)
-        });
+        data.push({ date: d, miles: +(Math.random() * 10).toFixed(1) });
       }
       return data.sort((a,b) => a.date - b.date);
     }
-
     const rawData = generateDummyData();
+
+    // --- Set up SVG
     const svg = d3.select("svg");
-    const margin = { top: 20, right: 30, bottom: 40, left: 50 };
+    const margin = { top:20, right:30, bottom:40, left:50 };
     const width = +svg.attr("width") - margin.left - margin.right;
     const height = +svg.attr("height") - margin.top - margin.bottom;
     const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
 
-    // Scales
     const x = d3.scaleTime().range([0, width]);
     const y = d3.scaleLinear().range([height, 0]);
 
-    // Generators
     const line = d3.line()
       .x(d => x(d.date))
       .y(d => y(d.miles))
@@ -137,113 +133,104 @@
       .y1(d => y(d.miles))
       .curve(d3.curveMonotoneX);
 
-    // Grid & axis groups
-    const gridY = g.append("g").attr("class", "grid");
-    const gridX = g.append("g").attr("class", "grid").attr("transform", `translate(0,${height})`);
-    const xAxisG = g.append("g").attr("class","axis").attr("transform", `translate(0,${height})`);
+    // Grid + axes
+    const gridY = g.append("g").attr("class","grid");
+    const gridX = g.append("g").attr("class","grid").attr("transform",`translate(0,${height})`);
+    const xAxisG = g.append("g").attr("class","axis").attr("transform",`translate(0,${height})`);
     const yAxisG = g.append("g").attr("class","axis");
 
-    // Tooltip & overlay
+    // Tooltip / overlay / focus dot
     const tooltip = d3.select("#tooltip");
     const overlay = g.append("rect")
-      .attr("width", width)
-      .attr("height", height)
-      .style("fill", "none")
-      .style("pointer-events", "all");
+      .attr("width", width).attr("height", height)
+      .style("fill","none").style("pointer-events","all");
 
-    // Hover focus
-    const focus = g.append("g").style("display", "none");
-    const focusDot = focus.append("circle").attr("class", "dot").attr("r", 5);
+    const focus = g.append("g").style("display","none");
+    focus.append("circle").attr("class","dot").attr("r",5);
 
-    const bisectDate = d3.bisector(d => d.date).left;
+    const bisectDate = d3.bisector(d=>d.date).left;
 
-    function update(requestedDays) {
-      // cap to 30 days max
-      const spanDays = Math.min(requestedDays, 30);
+    function update(requestedSpan) {
+      // filter last requestedSpan days
       const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - spanDays);
-      const data = rawData.filter(d => d.date >= cutoff);
+      cutoff.setDate(cutoff.getDate() - requestedSpan);
+      const filtered = rawData.filter(d=>d.date >= cutoff);
 
-      // update domains
-      x.domain(d3.extent(data, d => d.date));
-      y.domain([0, d3.max(data, d => d.miles) * 1.1]);
+      // bucket >30 days into 30 averaged points
+      let data;
+      if (filtered.length > 30) {
+        const bucketSize = Math.ceil(filtered.length / 30);
+        data = [];
+        for (let i=0; i<filtered.length; i+=bucketSize) {
+          const chunk = filtered.slice(i, i+bucketSize);
+          const avgTime = d3.mean(chunk, d=>d.date.getTime());
+          const avgMiles = d3.mean(chunk, d=>d.miles);
+          data.push({ date: new Date(avgTime), miles: +avgMiles.toFixed(1) });
+        }
+      } else {
+        data = filtered;
+      }
 
-      // draw area
+      // domains
+      x.domain(d3.extent(data, d=>d.date));
+      y.domain([0, d3.max(data, d=>d.miles)*1.1]);
+
+      // draw area & line & dots
       g.selectAll(".area").data([data])
-        .join("path")
-        .attr("class", "area")
-        .attr("d", area);
+        .join("path").attr("class","area").attr("d", area);
 
-      // draw line
       g.selectAll(".line").data([data])
-        .join("path")
-        .attr("class", "line")
-        .attr("d", line);
+        .join("path").attr("class","line").attr("d", line);
 
-      // draw dots
       g.selectAll(".dot").data(data)
         .join("circle")
-        .attr("class", "dot")
-        .attr("cx", d => x(d.date))
-        .attr("cy", d => y(d.miles))
-        .attr("r", 4);
+          .attr("class","dot")
+          .attr("cx", d=>x(d.date))
+          .attr("cy", d=>y(d.miles))
+          .attr("r", 4);
 
-      // update grids
+      // gridlines at each data point
       gridY.call(d3.axisLeft(y)
           .ticks(6)
           .tickSize(-width)
           .tickFormat(""))
         .selectAll("line")
-          .attr("stroke", "#444")
-          .attr("stroke-opacity", 0.7);
+          .attr("stroke","#444").attr("stroke-opacity",0.7);
 
       gridX.call(d3.axisBottom(x)
-          .ticks(Math.min(spanDays, 6))
+          .tickValues(data.map(d=>d.date))
           .tickSize(-height)
           .tickFormat(""))
         .selectAll("line")
-          .attr("stroke", "#444")
-          .attr("stroke-opacity", 0.7);
+          .attr("stroke","#444").attr("stroke-opacity",0.7);
 
-      // update axes (on top of grid)
+      // axes on top
       xAxisG.call(d3.axisBottom(x)
-        .ticks(Math.min(spanDays, 6))
+        .ticks(Math.min(data.length, 6))
         .tickFormat(d3.timeFormat("%b %d")));
       yAxisG.call(d3.axisLeft(y));
 
-      // hover interaction
-      overlay.on("mouseover", () => {
-          focus.style("display", null);
-          tooltip.style("visibility", "visible");
-        })
-        .on("mouseout", () => {
-          focus.style("display", "none");
-          tooltip.style("visibility", "hidden");
-        })
-        .on("mousemove", function(event) {
-          const [mx] = d3.pointer(event, this);
-          const x0 = x.invert(mx);
-          const i = bisectDate(data, x0, 1);
-          const d0 = data[i - 1];
-          const d1 = data[i] || d0;
-          const d = (x0 - d0.date) > (d1.date - x0) ? d1 : d0;
+      // hover
+      overlay.on("mouseover", ()=>{ focus.style("display",null); tooltip.style("visibility","visible"); })
+             .on("mouseout", ()=>{ focus.style("display","none"); tooltip.style("visibility","hidden"); })
+             .on("mousemove", function(event) {
+        const [mx] = d3.pointer(event, this);
+        const x0 = x.invert(mx);
+        const i = bisectDate(data, x0, 1);
+        const d0 = data[i-1], d1 = data[i]||d0;
+        const d = (x0 - d0.date) > (d1.date - x0) ? d1 : d0;
+        const cx = x(d.date), cy = y(d.miles);
 
-          const cx = x(d.date);
-          const cy = y(d.miles);
-          focusDot.attr("cx", cx).attr("cy", cy);
-
-          tooltip
-            .html(`<strong>${d3.timeFormat("%B %d, %Y")(d.date)}</strong><br/>Miles: <b>${d.miles}</b>`)
-            .style("top",  (cy + margin.top + 20) + "px")
-            .style("left", (cx + margin.left + 10) + "px");
-        });
+        focus.select("circle").attr("cx",cx).attr("cy",cy);
+        tooltip.html(`<strong>${d3.timeFormat("%B %d, %Y")(d.date)}</strong><br/>Miles: <b>${d.miles}</b>`)
+               .style("top",  (cy + margin.top + 20) + "px")
+               .style("left", (cx + margin.left + 10) + "px");
+      });
     }
 
-    // initialize & bind control
+    // init & control
     update(7);
-    d3.select("#span").on("change", function() {
-      update(+this.value);
-    });
+    d3.select("#span").on("change", function(){ update(+this.value); });
   </script>
 </body>
 </html>
