@@ -2,41 +2,65 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Mileage Viewer</title>
+  <title>Dark-Mode Mileage Viewer</title>
   <style>
     body {
       font-family: 'Segoe UI', sans-serif;
-      background: #f9f9fb;
+      background: #1e1e1e;
       margin: 30px;
-      color: #333;
+      color: #ddd;
     }
     h1 {
       margin-bottom: 10px;
       font-size: 24px;
+      color: #fff;
     }
     #controls {
       margin-bottom: 20px;
     }
     label, select {
       font-size: 16px;
+      color: #ccc;
+    }
+    select {
+      background: #2b2b2b;
+      border: 1px solid #444;
+      color: #ddd;
+      padding: 4px 8px;
+      border-radius: 4px;
     }
     svg {
-      background: white;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      background: #2b2b2b;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.5);
       border-radius: 8px;
     }
+    .grid line {
+      stroke: #444;
+      stroke-opacity: 0.7;
+      shape-rendering: crispEdges;
+    }
+    .grid path {
+      display: none;
+    }
     .area {
-      fill: rgba(0, 119, 204, 0.2);
+      fill: rgba(0, 191, 255, 0.2);
     }
     .line {
       fill: none;
-      stroke: #0077cc;
+      stroke: #00bfff;
       stroke-width: 2.5px;
     }
     .dot {
-      fill: white;
-      stroke: #0077cc;
+      fill: #1e1e1e;
+      stroke: #00bfff;
       stroke-width: 2px;
+    }
+    .axis line, .axis path {
+      stroke: #888;
+    }
+    .axis text {
+      fill: #ccc;
+      font-size: 12px;
     }
     .tooltip {
       position: absolute;
@@ -46,7 +70,7 @@
       border-radius: 6px;
       pointer-events: none;
       font-size: 14px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
       visibility: hidden;
       transition: 0.15s ease-in-out;
     }
@@ -54,7 +78,7 @@
 </head>
 <body>
 
-  <h1>Mileage Viewer</h1>
+  <h1>Mileage Viewer (Dark Mode)</h1>
 
   <div id="controls">
     <label for="span">Select time span (max 30 days):</label>
@@ -63,7 +87,6 @@
       <option value="14">Last 14 days</option>
       <option value="21">Last 21 days</option>
       <option value="30">Last 30 days</option>
-      <!-- You can keep larger options, but code will cap at 30 days -->
       <option value="60">Last 60 days (capped to 30)</option>
       <option value="90">Last 90 days (capped to 30)</option>
     </select>
@@ -102,7 +125,7 @@
     const x = d3.scaleTime().range([0, width]);
     const y = d3.scaleLinear().range([height, 0]);
 
-    // Line & area generators
+    // Generators
     const line = d3.line()
       .x(d => x(d.date))
       .y(d => y(d.miles))
@@ -114,11 +137,13 @@
       .y1(d => y(d.miles))
       .curve(d3.curveMonotoneX);
 
-    // Axis groups
-    const xAxisG = g.append("g").attr("transform", `translate(0,${height})`);
-    const yAxisG = g.append("g");
+    // Grid & axis groups
+    const gridY = g.append("g").attr("class", "grid");
+    const gridX = g.append("g").attr("class", "grid").attr("transform", `translate(0,${height})`);
+    const xAxisG = g.append("g").attr("class","axis").attr("transform", `translate(0,${height})`);
+    const yAxisG = g.append("g").attr("class","axis");
 
-    // Tooltip and overlay
+    // Tooltip & overlay
     const tooltip = d3.select("#tooltip");
     const overlay = g.append("rect")
       .attr("width", width)
@@ -126,11 +151,9 @@
       .style("fill", "none")
       .style("pointer-events", "all");
 
-    // Focus group for hover dot
+    // Hover focus
     const focus = g.append("g").style("display", "none");
-    const focusDot = focus.append("circle")
-      .attr("class", "dot")
-      .attr("r", 5);
+    const focusDot = focus.append("circle").attr("class", "dot").attr("r", 5);
 
     const bisectDate = d3.bisector(d => d.date).left;
 
@@ -165,7 +188,24 @@
         .attr("cy", d => y(d.miles))
         .attr("r", 4);
 
-      // update axes
+      // update grids
+      gridY.call(d3.axisLeft(y)
+          .ticks(6)
+          .tickSize(-width)
+          .tickFormat(""))
+        .selectAll("line")
+          .attr("stroke", "#444")
+          .attr("stroke-opacity", 0.7);
+
+      gridX.call(d3.axisBottom(x)
+          .ticks(Math.min(spanDays, 6))
+          .tickSize(-height)
+          .tickFormat(""))
+        .selectAll("line")
+          .attr("stroke", "#444")
+          .attr("stroke-opacity", 0.7);
+
+      // update axes (on top of grid)
       xAxisG.call(d3.axisBottom(x)
         .ticks(Math.min(spanDays, 6))
         .tickFormat(d3.timeFormat("%b %d")));
